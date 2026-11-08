@@ -55,8 +55,6 @@ Sekarang login di aplikasi:
 - Admin → username `adminklz` + password pilihanmu
 - Kasir → username `kasirklz` + password `klzkasir`
 
-> **Penting:** di kolom Username cukup ketik `kasirklz`, **bukan** `kasirklz@klz.app`. Email hanya dipakai di Firebase Console. (Versi terbaru aplikasi sudah menerima keduanya, tapi tetap disarankan memakai username.)
-
 > Catatan: di Firebase, Email/Password memerlukan **minimal 6 karakter**. Password `klzkasir` sudah memenuhi syarat.
 
 ---
@@ -106,7 +104,7 @@ Tanpa langkah ini, login akan gagal di website (error `auth/unauthorized-domain`
 2. Klik **Add domain**, isi dengan domain Netlify kamu, misalnya `klz-kasir.netlify.app` (tanpa `https://`).
 3. Simpan.
 
-**Jika memakai domain sendiri** (misal `klz.editinbang.my.id`), domain itu WAJIB juga ditambahkan di Authorized domains. Tanpa ini, login gagal dengan pesan "Domain website ini belum diizinkan". Domain `localhost` biasanya sudah ada otomatis untuk tes di komputer sendiri.
+Jika nanti memakai domain sendiri (misal `kasir.klzcoffee.com`), tambahkan juga domain tersebut di sini.
 
 ---
 
@@ -148,10 +146,7 @@ Tanpa langkah ini, login akan gagal di website (error `auth/unauthorized-domain`
 
 | Masalah | Solusi |
 |---|---|
-| "Username tidak dikenal" | Username yang diketik salah. Gunakan `kasirklz` atau `adminklz`. |
-| "Password salah" | Password tidak cocok dengan yang di Firebase. Reset lewat Authentication → Users → ⋮ → Reset password. |
-| "Akun belum dibuat" | User belum ditambahkan di Authentication dengan email `kasirklz@klz.app`. |
-| Login gagal terus | Buka F12 → Console, lihat kode error (`auth/...`) yang muncul, lalu cocokkan dengan tabel ini. |
+| Login gagal terus | Pastikan akun dibuat di Authentication dengan email `...@klz.app` dan Email/Password sudah diaktifkan. |
 | `auth/unauthorized-domain` | Tambahkan domain Netlify ke Authorized domains (Bagian 3). |
 | "Missing or insufficient permissions" | Rules Firestore belum dipublish, atau email di rules tidak cocok dengan akun. |
 | Produk tidak muncul di kasir | Tambahkan produk dulu lewat halaman admin. |
