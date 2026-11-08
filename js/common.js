@@ -13,6 +13,21 @@ export const ROLE_PAGE = { admin: "admin.html", kasir: "kasir.html" };
 export const usernameToEmail = (u) => `${u.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
 export const roleOfUsername = (u) => ROLES[u.trim().toLowerCase()] || null;
 
+/**
+ * Menerima username (kasirklz) ATAU email lengkap (kasirklz@klz.app).
+ * Mengembalikan { email, role } atau null jika tidak dikenali.
+ */
+export function resolveLogin(input) {
+  const v = input.trim().toLowerCase();
+  if (v.includes("@")) {
+    const [name, domain] = v.split("@");
+    const role = domain === EMAIL_DOMAIN ? roleOfUsername(name) : null;
+    return role ? { email: v, role } : null;
+  }
+  const role = roleOfUsername(v);
+  return role ? { email: usernameToEmail(v), role } : null;
+}
+
 export function roleOfUser(user) {
   if (!user || !user.email) return null;
   const [name, domain] = user.email.split("@");
