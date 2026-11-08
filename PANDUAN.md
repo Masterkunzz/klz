@@ -163,3 +163,39 @@ Tanpa langkah ini, login akan gagal di website (error `auth/unauthorized-domain`
 - Di tablet landscape, daftar produk di kiri dan keranjang di kanan (layar ≥ 900px).
 - Di tablet portrait atau HP, layout menyesuaikan menjadi satu kolom.
 - Semua tombol dibuat cukup besar untuk disentuh dengan jari.
+
+---
+
+## Pembaruan Fitur (versi terbaru)
+
+### Login
+- Login kembali memakai **username saja**: `adminklz` atau `kasirklz`. Tidak perlu mengetik `@klz.app`.
+
+### Produk (halaman admin → tab Produk)
+- Tekan **+ Tambah Produk** untuk membuka popup. Isi:
+  - **Nama produk**
+  - **Seller** (wajib diisi). Ketik nama seller baru atau pilih dari daftar seller yang sudah ada.
+  - **Harga** (bebas, termasuk angka 0, 5000, 7500, dst.)
+  - **Kategori**: Jajan, Minuman, Nasi, Lauk, atau Lainnya
+- Produk dikelompokkan per seller di tabel. Filter kategori dan pencarian tersedia di atas.
+- Tombol **Edit** membuka popup yang sama dengan data terisi.
+
+> Penyebab harga harus berakhiran 1 pada versi sebelumnya: input harga memakai `step="100"`, sehingga browser hanya menerima 1, 101, 201, dst. Sudah diperbaiki menjadi `step="1"`.
+
+### Kasir
+- Di halaman **New Order**, tersedia filter kategori (Semua, Jajan, Minuman, Nasi, Lauk, Lainnya) di atas daftar produk. Filter bisa dikombinasikan dengan pencarian nama.
+- Setelah pesanan disimpan, terdengar **suara kasir (cash)**.
+  - Untuk memakai suara sendiri, letakkan file MP3 di `assets/cash.mp3`. Jika file tidak ada, aplikasi memakai suara bawaan.
+  - Browser memblokir suara sampai pengguna pernah berinteraksi dengan halaman. Setelah satu kali klik di halaman, suara akan berbunyi normal.
+
+### Riwayat Penjualan & Ralat (halaman admin → tab Riwayat)
+- Semua transaksi tampil dalam tabel. Filter berdasarkan rentang tanggal dan metode (Cash/QRIS).
+- Tombol **Edit** untuk meralat pesanan:
+  - Ubah jumlah item (+ / −) atau hapus item
+  - Ubah metode pembayaran dan nominal bayar
+  - Total dan kembalian dihitung ulang otomatis
+- Tombol **Hapus** untuk menghapus transaksi yang salah input. Tindakan ini tidak bisa dibatalkan.
+- Setiap ralat tersimpan dengan field `editedAt` di Firestore sebagai jejak perubahan.
+
+### Update rules
+Tidak ada perubahan pada `firestore.rules`. Rules sebelumnya sudah mengizinkan admin untuk mengubah dan menghapus pesanan. Namun, jika Anda sudah pernah memasang rules, pastikan rules tersebut sudah dipublish ulang agar nilai terbaru berlaku.

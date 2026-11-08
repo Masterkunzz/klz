@@ -1,120 +1,173 @@
-import { db, rupiah, toast, esc, requireRole, logout } from "./common.js";
+import { db, rupiah, toast, esc, requireRole, logout, CATEGORIES, catLabel } from "./common.js";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 await requireRole("admin");
-document.getElementById("logoutBtn").onclick = logout;
-
 const $ = (id) => document.getElementById(id);
+$("logoutBtn").onclick = logout;
 
-// ================= TABS =================
+const pad = (n) => String(n).padStart(2, "0");
+const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+function weekStart(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+
+// ================= TABS & MODAL =================
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.onclick = () => {
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
-    $("tab-produk").classList.toggle("hidden", btn.dataset.tab !== "produk");
-    $("tab-analitik").classList.toggle("hidden", btn.dataset.tab !== "analitik");
+    document.querySelectorAll(".tab-panel").forEach((p) =>
+      p.classList.toggle("hidden", p.id !== "tab-" + btn.dataset.tab)
+    );
     if (btn.dataset.tab === "analitik") renderAnalytics();
+    if (btn.dataset.tab === "riwayat") renderHistory();
   };
 });
 
+const openModal = (id) => $(id).classList.add("show");
+const closeModal = (id) => $(id).classList.remove("show");
+document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => closeModal(b.dataset.close)));
+
+// Isi pilihan kategori
+$("categorySelect").innerHTML = CATEGORIES.map((c) => `<option value="${c}">${catLabel(c)}</option>`).join("");
+$("productCatFilter").insertAdjacentHTML(
+  "beforeend",
+  CATEGORIES.map((c) => `<option value="${c}">${catLabel(c)}</option>`).join("")
+);
+
 // ================= PRODUK =================
-const form = $("productForm");
 let products = [];
 let editingId = null;
 
 onSnapshot(query(collection(db, "products"), orderBy("name")), (snap) => {
   products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const sellers = [...new Set(products.map((p) => p.seller).filter(Boolean))].sort();
+  $("sellerList").innerHTML = sellers.map((s) => `<option value="${esc(s)}">`).join("");
   renderProducts();
 });
 
 $("productSearch").oninput = renderProducts;
+$("productCatFilter").onchange = renderProducts;
 
 function renderProducts() {
   const q = $("productSearch").value.trim().toLowerCase();
+  const cf = $("productCatFilter").value;
+
   const list = products.filter(
     (p) =>
-      !q ||
-      (p.name || "").toLowerCase().includes(q) ||
-      (p.seller || "").toLowerCase().includes(q)
+      (!q || (p.name || "").toLowerCase().includes(q) || (p.seller || "").toLowerCase().includes(q)) &&
+      (!cf || (p.category || "lainnya") === cf)
   );
 
-  $("productRows").innerHTML = list.length
-    ? list
+  // Kelompokkan per seller
+  const groups = {};
+  list.forEach((p) => {
+    const s = p.seller || "Tanpa seller";
+    (groups[s] ||= []).push(p);
+  });
+
+  const names = Object.keys(groups).sort();
+  $("sellerGroups").innerHTML = names.length
+    ? names
         .map(
-          (p) => `
-      <tr>
-        <td>${esc(p.name)}</td>
-        <td>${esc(p.seller)}</td>
-        <td>${rupiah(p.price)}</td>
-        <td class="actions">
-          <button class="btn btn-sm" data-edit="${p.id}">Edit</button>
-          <button class="btn btn-sm btn-danger" data-del="${p.id}">Hapus</button>
-        </td>
-      </tr>`
+          (s) => `
+      <div class="card seller-group">
+        <div class="row-between">
+          <h3>${esc(s)}</h3>
+          <span class="badge">${groups[s].length} produk</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Nama Produk</th><th>Kategori</th><th>Harga</th><th></th></tr></thead>
+            <tbody>
+              ${groups[s]
+                .map(
+                  (p) => `
+                <tr>
+                  <td>${esc(p.name)}</td>
+                  <td><span class="badge cat">${catLabel(p.category)}</span></td>
+                  <td>${rupiah(p.price)}</td>
+                  <td class="actions">
+                    <button class="btn btn-sm" data-edit="${p.id}">Edit</button>
+                    <button class="btn btn-sm btn-danger" data-del="${p.id}">Hapus</button>
+                  </td>
+                </tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>`
         )
         .join("")
-    : `<tr><td colspan="4" class="empty">Belum ada produk</td></tr>`;
+    : `<div class="card empty">Belum ada produk. Tekan "+ Tambah Produk".</div>`;
 }
 
-form.addEventListener("submit", async (e) => {
+function openProductModal(p = null) {
+  editingId = p ? p.id : null;
+  const f = $("productForm");
+  f.reset();
+  $("productModalTitle").textContent = p ? "Edit Produk" : "Tambah Produk";
+  if (p) {
+    f.name.value = p.name || "";
+    f.seller.value = p.seller || "";
+    f.price.value = p.price ?? "";
+    f.category.value = p.category || "lainnya";
+  }
+  openModal("productModal");
+  setTimeout(() => f.name.focus(), 50);
+}
+
+$("addProductBtn").onclick = () => openProductModal();
+
+$("productForm").onsubmit = async (e) => {
   e.preventDefault();
+  const f = e.target;
   const data = {
-    name: form.name.value.trim(),
-    seller: form.seller.value.trim(),
-    price: Number(form.price.value),
+    name: f.name.value.trim(),
+    seller: f.seller.value.trim(),
+    price: Math.round(Number(f.price.value)),
+    category: f.category.value,
   };
 
-  if (!data.name || !data.seller || !(data.price > 0)) {
-    toast("Lengkapi nama, seller, dan harga.", "error");
+  if (!data.name || !data.seller || !(data.price >= 0) || !CATEGORIES.includes(data.category)) {
+    toast("Lengkapi nama, seller, harga, dan kategori.", "error");
     return;
   }
 
+  const btn = $("saveProductBtn");
+  btn.disabled = true;
   try {
     if (editingId) {
       await updateDoc(doc(db, "products", editingId), data);
-      toast("Produk berhasil diperbarui");
+      toast("Produk diperbarui");
     } else {
       await addDoc(collection(db, "products"), { ...data, createdAt: serverTimestamp() });
-      toast("Produk berhasil ditambahkan");
+      toast("Produk ditambahkan");
     }
-    resetForm();
+    closeModal("productModal");
   } catch (err) {
     toast("Gagal menyimpan: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
   }
-});
+};
 
-$("cancelEdit").onclick = resetForm;
-
-function resetForm() {
-  form.reset();
-  editingId = null;
-  $("formTitle").textContent = "Tambah Produk";
-  $("saveProductBtn").textContent = "Simpan Produk";
-  $("cancelEdit").hidden = true;
-}
-
-$("productRows").onclick = async (e) => {
+$("sellerGroups").onclick = async (e) => {
   const editBtn = e.target.closest("[data-edit]");
   const delBtn = e.target.closest("[data-del]");
 
   if (editBtn) {
     const p = products.find((x) => x.id === editBtn.dataset.edit);
-    if (!p) return;
-    editingId = p.id;
-    form.name.value = p.name;
-    form.seller.value = p.seller;
-    form.price.value = p.price;
-    $("formTitle").textContent = "Edit Produk";
-    $("saveProductBtn").textContent = "Simpan Perubahan";
-    $("cancelEdit").hidden = false;
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (p) openProductModal(p);
   }
-
   if (delBtn) {
     const p = products.find((x) => x.id === delBtn.dataset.del);
-    if (!p) return;
-    if (!confirm(`Hapus produk "${p.name}"?`)) return;
+    if (!p || !confirm(`Hapus produk "${p.name}"?`)) return;
     try {
       await deleteDoc(doc(db, "products", p.id));
       toast("Produk dihapus");
@@ -124,41 +177,194 @@ $("productRows").onclick = async (e) => {
   }
 };
 
-// ================= ANALITIK =================
+// ================= DATA PESANAN (realtime) =================
 let orders = [];
-let period = "harian";
-let chart = null;
 
 onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snap) => {
   orders = snap.docs.map((d) => {
     const x = d.data();
-    return { ...x, date: x.createdAt ? x.createdAt.toDate() : new Date() };
+    return { ...x, id: d.id, date: x.createdAt ? x.createdAt.toDate() : new Date() };
   });
+  renderHistory();
   renderAnalytics();
 });
 
-$("periodSeg").onclick = (e) => {
-  const b = e.target.closest("button");
+// ================= RIWAYAT PENJUALAN =================
+$("hFrom").value = dayKey(new Date());
+$("hTo").value = dayKey(new Date());
+["hFrom", "hTo", "hMethod"].forEach((id) => ($(id).onchange = renderHistory));
+
+function renderHistory() {
+  const from = new Date($("hFrom").value + "T00:00:00");
+  const to = new Date($("hTo").value + "T23:59:59.999");
+  const method = $("hMethod").value;
+
+  const list = orders.filter(
+    (o) => o.date >= from && o.date <= to && (!method || o.method === method)
+  );
+  const sum = list.reduce((s, o) => s + (o.total || 0), 0);
+  $("historyCount").textContent = `${list.length} transaksi · total ${rupiah(sum)}`;
+
+  $("historyRows").innerHTML = list.length
+    ? list
+        .map(
+          (o) => `
+      <tr>
+        <td>${esc(o.no || "-")}</td>
+        <td>${o.date.toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+        <td class="wrap">${(o.items || []).map((i) => `${esc(i.name)} ×${i.qty}`).join(", ")}</td>
+        <td>${rupiah(o.total)}</td>
+        <td>${rupiah(o.paid)}</td>
+        <td>${rupiah(o.change)}</td>
+        <td><span class="badge ${o.method}">${(o.method || "-").toUpperCase()}</span></td>
+        <td>${esc(o.kasir || "-")}</td>
+        <td class="actions">
+          <button class="btn btn-sm" data-oedit="${o.id}">Edit</button>
+          <button class="btn btn-sm btn-danger" data-odel="${o.id}">Hapus</button>
+        </td>
+      </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="9" class="empty">Tidak ada transaksi di rentang ini</td></tr>`;
+}
+
+// ---- Edit pesanan (ralat) ----
+let editOrder = null;
+
+function openOrderEdit(o) {
+  editOrder = {
+    id: o.id,
+    no: o.no,
+    items: (o.items || []).map((i) => ({ ...i })),
+    method: o.method || "cash",
+    paid: o.paid || 0,
+  };
+  renderOrderEdit();
+  openModal("orderModal");
+}
+
+const orderTotal = () => editOrder.items.reduce((s, i) => s + i.price * i.qty, 0);
+
+function renderOrderEdit() {
+  $("oeNo").textContent = "No. " + (editOrder.no || "-");
+  $("oeItems").innerHTML = editOrder.items.length
+    ? editOrder.items
+        .map(
+          (i, idx) => `
+      <li>
+        <div class="ci-info"><strong>${esc(i.name)}</strong><small>${rupiah(i.price)} / pcs</small></div>
+        <div class="qty">
+          <button type="button" data-oact="dec" data-idx="${idx}">−</button>
+          <span>${i.qty}</span>
+          <button type="button" data-oact="inc" data-idx="${idx}">+</button>
+        </div>
+        <button type="button" class="icon-del" data-oact="del" data-idx="${idx}">✕</button>
+      </li>`
+        )
+        .join("")
+    : `<li class="empty">Semua item dihapus</li>`;
+
+  document.querySelectorAll("#oeMethod button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.m === editOrder.method)
+  );
+  $("oePaid").value = editOrder.paid;
+  updateOrderEditTotals();
+}
+
+function updateOrderEditTotals() {
+  const t = orderTotal();
+  if (editOrder.method === "qris") {
+    editOrder.paid = t;
+    $("oePaid").value = t;
+  }
+  const change = editOrder.paid - t;
+  $("oeTotal").textContent = rupiah(t);
+  $("oeChange").textContent = change < 0 ? "Kurang " + rupiah(-change) : rupiah(change);
+  $("oeChange").classList.toggle("bad", change < 0);
+  $("oeSave").disabled = !editOrder.items.length || change < 0;
+}
+
+$("oeItems").onclick = (e) => {
+  const b = e.target.closest("[data-oact]");
   if (!b) return;
-  period = b.dataset.period;
-  document.querySelectorAll("#periodSeg button").forEach((x) => x.classList.toggle("active", x === b));
-  renderAnalytics();
+  const idx = Number(b.dataset.idx);
+  const it = editOrder.items[idx];
+  if (b.dataset.oact === "del") {
+    editOrder.items.splice(idx, 1);
+  } else if (it) {
+    it.qty += b.dataset.oact === "inc" ? 1 : -1;
+    if (it.qty <= 0) editOrder.items.splice(idx, 1);
+  }
+  renderOrderEdit();
 };
 
-const pad = (n) => String(n).padStart(2, "0");
-const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+$("oeMethod").onclick = (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  editOrder.method = b.dataset.m;
+  renderOrderEdit();
+};
 
-// Senin sebagai awal minggu
-function weekStart(d) {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
-  return x;
-}
+$("oePaid").oninput = (e) => {
+  editOrder.paid = Number(e.target.value || 0);
+  updateOrderEditTotals();
+};
+
+$("oeSave").onclick = async () => {
+  const t = orderTotal();
+  if (!editOrder.items.length || editOrder.paid < t) return;
+
+  const items = editOrder.items.map((i) => ({
+    id: i.id,
+    name: i.name,
+    seller: i.seller || "",
+    price: i.price,
+    qty: i.qty,
+    subtotal: i.price * i.qty,
+  }));
+
+  try {
+    await updateDoc(doc(db, "orders", editOrder.id), {
+      items,
+      total: t,
+      paid: editOrder.paid,
+      change: editOrder.paid - t,
+      method: editOrder.method,
+      editedAt: serverTimestamp(),
+    });
+    toast("Pesanan diperbarui");
+    closeModal("orderModal");
+  } catch (err) {
+    toast("Gagal menyimpan: " + err.message, "error");
+  }
+};
+
+$("historyRows").onclick = async (e) => {
+  const editBtn = e.target.closest("[data-oedit]");
+  const delBtn = e.target.closest("[data-odel]");
+
+  if (editBtn) {
+    const o = orders.find((x) => x.id === editBtn.dataset.oedit);
+    if (o) openOrderEdit(o);
+  }
+  if (delBtn) {
+    const o = orders.find((x) => x.id === delBtn.dataset.odel);
+    if (!o || !confirm(`Hapus transaksi ${o.no}? Data tidak bisa dikembalikan.`)) return;
+    try {
+      await deleteDoc(doc(db, "orders", o.id));
+      toast("Transaksi dihapus");
+    } catch (err) {
+      toast("Gagal menghapus: " + err.message, "error");
+    }
+  }
+};
+
+// ================= ANALITIK =================
+let period = "harian";
+let chart = null;
 
 const keyOf = (d, p) => (p === "harian" ? dayKey(d) : p === "mingguan" ? dayKey(weekStart(d)) : monthKey(d));
 
-// Daftar periode yang ditampilkan: 14 hari, 9 minggu, 12 bulan terakhir
 function buckets(p) {
   const now = new Date();
   const list = [];
@@ -184,17 +390,23 @@ function buckets(p) {
   return list;
 }
 
+$("periodSeg").onclick = (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  period = b.dataset.period;
+  document.querySelectorAll("#periodSeg button").forEach((x) => x.classList.toggle("active", x === b));
+  renderAnalytics();
+};
+
 function renderAnalytics() {
   const now = new Date();
   const sumOf = (p, key) =>
     orders.filter((o) => keyOf(o.date, p) === key).reduce((s, o) => s + (o.total || 0), 0);
 
-  // Ringkasan cepat (selalu tampil)
   $("sumHari").textContent = rupiah(sumOf("harian", dayKey(now)));
   $("sumMinggu").textContent = rupiah(sumOf("mingguan", dayKey(weekStart(now))));
   $("sumBulan").textContent = rupiah(sumOf("bulanan", monthKey(now)));
 
-  // Data periode yang dipilih
   const list = buckets(period).map((b) => {
     const os = orders.filter((o) => keyOf(o.date, period) === b.key);
     return { ...b, trx: os.length, omzet: os.reduce((s, o) => s + (o.total || 0), 0) };
@@ -219,7 +431,6 @@ function renderAnalytics() {
     .map((b) => `<tr><td>${b.label}</td><td>${b.trx}</td><td>${rupiah(b.omzet)}</td></tr>`)
     .join("");
 
-  // Produk terlaris
   const agg = {};
   inRange.forEach((o) => (o.items || []).forEach((i) => (agg[i.name] = (agg[i.name] || 0) + (i.qty || 0))));
   const top = Object.entries(agg).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -227,7 +438,6 @@ function renderAnalytics() {
     ? top.map(([n, q]) => `<li><span>${esc(n)}</span><strong>${q} pcs</strong></li>`).join("")
     : `<li class="empty">Belum ada data</li>`;
 
-  // Grafik
   if (chart) chart.destroy();
   chart = new Chart($("chart"), {
     type: "bar",

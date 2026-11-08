@@ -1,4 +1,4 @@
-import { db, rupiah, toast, esc, requireRole, logout } from "./common.js";
+import { db, rupiah, toast, esc, requireRole, logout, catLabel, playCashSound } from "./common.js";
 import {
   collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -10,6 +10,7 @@ $("logoutBtn").onclick = logout;
 let products = [];
 let cart = [];
 let method = "cash";
+let category = "semua";
 
 // ================= DATA PRODUK (realtime) =================
 onSnapshot(query(collection(db, "products"), orderBy("name")), (snap) => {
@@ -46,16 +47,23 @@ $("backBtn").onclick = () => {
   showView("home");
 };
 
-// ================= GRID PRODUK =================
+// ================= FILTER & GRID PRODUK =================
 $("search").oninput = renderGrid;
+
+$("catChips").onclick = (e) => {
+  const b = e.target.closest("[data-cat]");
+  if (!b) return;
+  category = b.dataset.cat;
+  document.querySelectorAll("#catChips .chip").forEach((c) => c.classList.toggle("active", c === b));
+  renderGrid();
+};
 
 function renderGrid() {
   const q = $("search").value.trim().toLowerCase();
   const list = products.filter(
     (p) =>
-      !q ||
-      (p.name || "").toLowerCase().includes(q) ||
-      (p.seller || "").toLowerCase().includes(q)
+      (!q || (p.name || "").toLowerCase().includes(q) || (p.seller || "").toLowerCase().includes(q)) &&
+      (category === "semua" || (p.category || "lainnya") === category)
   );
 
   $("productGrid").innerHTML = list.length
@@ -63,6 +71,7 @@ function renderGrid() {
         .map(
           (p) => `
         <button class="pbox" data-id="${p.id}">
+          <span class="pcat">${catLabel(p.category)}</span>
           <span class="pname">${esc(p.name)}</span>
           <span class="pseller">${esc(p.seller)}</span>
           <span class="pprice">${rupiah(p.price)}</span>
@@ -70,7 +79,7 @@ function renderGrid() {
         )
         .join("")
     : `<p class="empty">${
-        products.length ? "Produk tidak ditemukan" : "Belum ada produk. Tambahkan lewat halaman admin."
+        products.length ? "Tidak ada produk di filter ini" : "Belum ada produk. Tambahkan lewat halaman admin."
       }</p>`;
 }
 
@@ -122,10 +131,11 @@ $("cartList").onclick = (e) => {
   if (!item) return;
 
   const act = btn.dataset.act;
-  if (act === "inc") item.qty++;
-  if (act === "dec") item.qty--;
-  if (act === "del" || item.qty <= 0) cart = cart.filter((i) => i !== item);
-
+  if (act === "del") cart = cart.filter((i) => i !== item);
+  else {
+    item.qty += act === "inc" ? 1 : -1;
+    if (item.qty <= 0) cart = cart.filter((i) => i !== item);
+  }
   renderCart();
 };
 
@@ -196,6 +206,7 @@ $("saveBtn").onclick = async () => {
       createdAt: serverTimestamp(),
     });
 
+    playCashSound();
     $("successInfo").innerHTML = `No. ${orderNo}<br>Kembalian: <strong>${rupiah(paid - t)}</strong>`;
     $("successOverlay").classList.add("show");
   } catch (err) {
@@ -215,10 +226,14 @@ $("closeSuccess").onclick = () => {
 function resetOrder() {
   cart = [];
   method = "cash";
+  category = "semua";
   $("paid").value = "";
   $("search").value = "";
   document.querySelectorAll("#paySeg button").forEach((x) =>
     x.classList.toggle("active", x.dataset.method === "cash")
+  );
+  document.querySelectorAll("#catChips .chip").forEach((c) =>
+    c.classList.toggle("active", c.dataset.cat === "semua")
   );
   renderGrid();
   renderCart();

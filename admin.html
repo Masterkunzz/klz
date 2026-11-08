@@ -22,48 +22,55 @@
 
     <nav class="tabs">
       <button class="tab active" data-tab="produk">Produk</button>
-      <button class="tab" data-tab="analitik">Analitik Penjualan</button>
+      <button class="tab" data-tab="riwayat">Riwayat Penjualan</button>
+      <button class="tab" data-tab="analitik">Analitik</button>
     </nav>
 
     <main class="container">
-      <!-- ============ TAB PRODUK ============ -->
+      <!-- ============ PRODUK ============ -->
       <section id="tab-produk" class="tab-panel">
         <div class="card">
-          <h2 id="formTitle">Tambah Produk</h2>
-          <form id="productForm" class="grid-form">
-            <label>Nama Produk
-              <input name="name" required maxlength="80">
-            </label>
-            <label>Seller
-              <input name="seller" required maxlength="80">
-            </label>
-            <label>Harga (Rp)
-              <input name="price" type="number" min="1" step="100" required inputmode="numeric">
-            </label>
-            <div class="form-actions">
-              <button type="button" class="btn btn-ghost" id="cancelEdit" hidden>Batal</button>
-              <button type="submit" class="btn btn-primary" id="saveProductBtn">Simpan Produk</button>
-            </div>
-          </form>
-        </div>
-
-        <div class="card">
-          <div class="row-between">
-            <h2>Daftar Produk</h2>
-            <input id="productSearch" class="search-sm" placeholder="Cari produk / seller..." type="search">
+          <div class="toolbar">
+            <button class="btn btn-primary" id="addProductBtn">+ Tambah Produk</button>
+            <input id="productSearch" class="search-sm" type="search" placeholder="Cari produk / seller...">
+            <select id="productCatFilter" class="select-sm">
+              <option value="">Semua kategori</option>
+            </select>
           </div>
+        </div>
+        <div id="sellerGroups" class="seller-groups"></div>
+      </section>
+
+      <!-- ============ RIWAYAT ============ -->
+      <section id="tab-riwayat" class="tab-panel hidden">
+        <div class="card">
+          <div class="filters">
+            <label>Dari tanggal<input type="date" id="hFrom"></label>
+            <label>Sampai tanggal<input type="date" id="hTo"></label>
+            <label>Metode
+              <select id="hMethod" class="select-sm">
+                <option value="">Semua</option>
+                <option value="cash">Cash</option>
+                <option value="qris">QRIS</option>
+              </select>
+            </label>
+          </div>
+          <p id="historyCount" class="muted"></p>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Nama Produk</th><th>Seller</th><th>Harga</th><th></th></tr>
+                <tr>
+                  <th>No</th><th>Waktu</th><th>Item</th><th>Total</th>
+                  <th>Bayar</th><th>Kembali</th><th>Metode</th><th>Kasir</th><th></th>
+                </tr>
               </thead>
-              <tbody id="productRows"></tbody>
+              <tbody id="historyRows"></tbody>
             </table>
           </div>
         </div>
       </section>
 
-      <!-- ============ TAB ANALITIK ============ -->
+      <!-- ============ ANALITIK ============ -->
       <section id="tab-analitik" class="tab-panel hidden">
         <div class="stats-grid">
           <div class="stat"><span>Omzet Hari Ini</span><strong id="sumHari">Rp 0</strong></div>
@@ -77,14 +84,12 @@
             <button data-period="mingguan">Mingguan</button>
             <button data-period="bulanan">Bulanan</button>
           </div>
-
           <div class="stats-grid small">
             <div class="stat"><span>Omzet Periode</span><strong id="pOmzet">-</strong></div>
             <div class="stat"><span>Transaksi</span><strong id="pTrx">-</strong></div>
             <div class="stat"><span>Item Terjual</span><strong id="pItems">-</strong></div>
             <div class="stat"><span>Cash / QRIS</span><strong id="pPay">-</strong></div>
           </div>
-
           <div class="chart-box"><canvas id="chart"></canvas></div>
         </div>
 
@@ -105,6 +110,58 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- ============ POPUP PRODUK ============ -->
+  <div class="overlay" id="productModal">
+    <div class="modal form">
+      <h2 id="productModalTitle">Tambah Produk</h2>
+      <form id="productForm" class="form-stack">
+        <label>Nama Produk
+          <input name="name" required maxlength="80" autocomplete="off">
+        </label>
+        <label>Seller
+          <input name="seller" required maxlength="80" list="sellerList" autocomplete="off" placeholder="Nama seller">
+          <datalist id="sellerList"></datalist>
+        </label>
+        <label>Harga (Rp)
+          <input name="price" type="number" min="0" step="1" required inputmode="numeric">
+        </label>
+        <label>Kategori
+          <select name="category" id="categorySelect" required></select>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close="productModal">Batal</button>
+          <button type="submit" class="btn btn-primary" id="saveProductBtn">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ POPUP EDIT PESANAN (RALAT) ============ -->
+  <div class="overlay" id="orderModal">
+    <div class="modal form">
+      <h2>Edit Pesanan</h2>
+      <p class="muted" id="oeNo"></p>
+      <ul id="oeItems" class="cart-list"></ul>
+
+      <div class="pay-seg" id="oeMethod">
+        <button type="button" data-m="cash">Cash</button>
+        <button type="button" data-m="qris">QRIS</button>
+      </div>
+
+      <label>Nominal Bayar
+        <input id="oePaid" type="number" inputmode="numeric" min="0">
+      </label>
+
+      <div class="total-row"><span>Total</span><strong id="oeTotal">Rp 0</strong></div>
+      <div class="change-row"><span>Kembalian</span><strong id="oeChange">Rp 0</strong></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="orderModal">Batal</button>
+        <button type="button" class="btn btn-primary" id="oeSave">Simpan Perubahan</button>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>

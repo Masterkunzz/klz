@@ -12,6 +12,7 @@ export const firebaseConfig = {
   appId: "1:924187392377:web:98f850816f2db12f1e17a8"
 };
 
+
 // Username login (HURUF KECIL). Harus sama dengan email di Firebase Auth
 // dan dengan rule di firestore.rules.
 export const ADMIN_USERNAME = "adminklz";
