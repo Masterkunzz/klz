@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Hanya akun admin & kasir yang sudah login
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'adminklz@klz.app';
+    }
+
+    function isStaff() {
+      return request.auth != null
+        && request.auth.token.email in ['adminklz@klz.app', 'kasirklz@klz.app'];
+    }
+
+    // Produk: semua staff bisa baca, hanya admin bisa tambah/ubah/hapus
+    match /products/{productId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Pesanan: staff bisa baca & buat pesanan, hanya admin bisa ubah/hapus
+    match /orders/{orderId} {
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.total is number
+        && request.resource.data.items is list;
+      allow update, delete: if isAdmin();
+    }
+  }
+}
