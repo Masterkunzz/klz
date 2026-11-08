@@ -1,4 +1,5 @@
 import { db, rupiah, toast, esc, requireRole, logout, catLabel, playCashSound } from "./common.js";
+import { initOrderEditor, openOrderEditor } from "./order-editor.js";
 import {
   collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -6,31 +7,92 @@ import {
 const user = await requireRole("kasir");
 const $ = (id) => document.getElementById(id);
 $("logoutBtn").onclick = logout;
+initOrderEditor();
 
 let products = [];
+let sellers = [];
 let cart = [];
 let method = "cash";
-let category = "semua";
+let selSeller = "semua";
+let selCat = "semua";
 
-// ================= DATA PRODUK (realtime) =================
+// ================= DATA (realtime) =================
 onSnapshot(query(collection(db, "products"), orderBy("name")), (snap) => {
   products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  renderSellers();
+  renderCats();
   renderGrid();
 });
 
-// ================= STATISTIK HARI INI =================
-const startOfDay = new Date();
-startOfDay.setHours(0, 0, 0, 0);
+onSnapshot(query(collection(db, "sellers"), orderBy("name")), (snap) => {
+  sellers = snap.docs.map((d) => d.data().name);
+  renderSellers();
+});
 
-onSnapshot(
-  query(collection(db, "orders"), where("createdAt", ">=", Timestamp.fromDate(startOfDay))),
-  (snap) => {
-    let total = 0;
-    snap.forEach((d) => (total += d.data().total || 0));
-    $("todayCount").textContent = snap.size;
-    $("todayTotal").textContent = rupiah(total);
-  }
-);
+// ================= RIWAYAT TRANSAKSI (per tanggal) =================
+let unsubDay = null;
+let dayOrders = [];
+
+const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+$("histDate").value = dayStr(new Date());
+$("histDate").onchange = () => loadDay($("histDate").value);
+loadDay($("histDate").value);
+
+function loadDay(value) {
+  if (unsubDay) unsubDay();
+  const start = new Date(value + "T00:00:00");
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  unsubDay = onSnapshot(
+    query(
+      collection(db, "orders"),
+      where("createdAt", ">=", Timestamp.fromDate(start)),
+      where("createdAt", "<", Timestamp.fromDate(end))
+    ),
+    (snap) => {
+      dayOrders = snap.docs
+        .map((d) => {
+          const x = d.data();
+          return { ...x, id: d.id, date: x.createdAt ? x.createdAt.toDate() : new Date() };
+        })
+        .sort((a, b) => b.date - a.date);
+      renderDay();
+    }
+  );
+}
+
+function renderDay() {
+  const total = dayOrders.reduce((s, o) => s + (o.total || 0), 0);
+  $("dayCount").textContent = dayOrders.length;
+  $("dayTotal").textContent = rupiah(total);
+
+  $("histList").innerHTML = dayOrders.length
+    ? dayOrders
+        .map(
+          (o) => `
+      <li>
+        <div class="ci-info">
+          <strong>${o.date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} · ${esc(o.no || "-")}</strong>
+          <small>${(o.items || []).map((i) => `${esc(i.name)} ×${i.qty}`).join(", ")}</small>
+        </div>
+        <div class="hist-right">
+          <strong>${rupiah(o.total)}</strong>
+          <span class="badge ${o.method}">${(o.method || "-").toUpperCase()}</span>
+        </div>
+        <button class="btn btn-sm" data-oedit="${o.id}">Edit</button>
+      </li>`
+        )
+        .join("")
+    : `<li class="empty">Belum ada transaksi di tanggal ini</li>`;
+}
+
+$("histList").onclick = (e) => {
+  const b = e.target.closest("[data-oedit]");
+  if (!b) return;
+  const o = dayOrders.find((x) => x.id === b.dataset.oedit);
+  if (o) openOrderEditor(o);
+};
 
 // ================= NAVIGASI =================
 function showView(v) {
@@ -47,23 +109,87 @@ $("backBtn").onclick = () => {
   showView("home");
 };
 
-// ================= FILTER & GRID PRODUK =================
-$("search").oninput = renderGrid;
+// ================= SELLER STRIP (bisa di-drag / di-scroll) =================
+const strip = $("sellerStrip");
+let dragging = false;
+let dragMoved = false;
+let startX = 0;
+let startLeft = 0;
+
+strip.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "mouse") return;
+  dragging = true;
+  dragMoved = false;
+  startX = e.clientX;
+  startLeft = strip.scrollLeft;
+});
+window.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - startX;
+  if (Math.abs(dx) > 5) dragMoved = true;
+  strip.scrollLeft = startLeft - dx;
+});
+window.addEventListener("pointerup", () => (dragging = false));
+
+function sellerNames() {
+  return [...new Set([...sellers, ...products.map((p) => p.seller).filter(Boolean)])].sort();
+}
+
+function renderSellers() {
+  strip.innerHTML =
+    `<button class="chip ${selSeller === "semua" ? "active" : ""}" data-seller="semua">Semua</button>` +
+    sellerNames()
+      .map(
+        (n) =>
+          `<button class="chip ${selSeller === n ? "active" : ""}" data-seller="${esc(n)}">${esc(n)}</button>`
+      )
+      .join("");
+}
+
+strip.onclick = (e) => {
+  if (dragMoved) return;
+  const b = e.target.closest("[data-seller]");
+  if (!b) return;
+  selSeller = b.dataset.seller;
+  selCat = "semua";
+  renderSellers();
+  renderCats();
+  renderGrid();
+};
+
+// ================= KATEGORI (hanya milik seller terpilih) =================
+function productsOfSeller() {
+  return selSeller === "semua" ? products : products.filter((p) => p.seller === selSeller);
+}
+
+function renderCats() {
+  const cats = [...new Set(productsOfSeller().map((p) => p.category || "lainnya"))].sort();
+  if (selCat !== "semua" && !cats.includes(selCat)) selCat = "semua";
+
+  $("catChips").innerHTML =
+    `<button class="chip ${selCat === "semua" ? "active" : ""}" data-cat="semua">Semua</button>` +
+    cats
+      .map((c) => `<button class="chip ${selCat === c ? "active" : ""}" data-cat="${esc(c)}">${catLabel(c)}</button>`)
+      .join("");
+}
 
 $("catChips").onclick = (e) => {
   const b = e.target.closest("[data-cat]");
   if (!b) return;
-  category = b.dataset.cat;
-  document.querySelectorAll("#catChips .chip").forEach((c) => c.classList.toggle("active", c === b));
+  selCat = b.dataset.cat;
+  renderCats();
   renderGrid();
 };
 
+// ================= GRID PRODUK =================
+$("search").oninput = renderGrid;
+
 function renderGrid() {
   const q = $("search").value.trim().toLowerCase();
-  const list = products.filter(
+  const list = productsOfSeller().filter(
     (p) =>
       (!q || (p.name || "").toLowerCase().includes(q) || (p.seller || "").toLowerCase().includes(q)) &&
-      (category === "semua" || (p.category || "lainnya") === category)
+      (selCat === "semua" || (p.category || "lainnya") === selCat)
   );
 
   $("productGrid").innerHTML = list.length
@@ -78,9 +204,7 @@ function renderGrid() {
         </button>`
         )
         .join("")
-    : `<p class="empty">${
-        products.length ? "Tidak ada produk di filter ini" : "Belum ada produk. Tambahkan lewat halaman admin."
-      }</p>`;
+    : `<p class="empty">${products.length ? "Tidak ada produk di filter ini" : "Belum ada produk. Tambahkan lewat halaman admin."}</p>`;
 }
 
 $("productGrid").onclick = (e) => {
@@ -226,18 +350,20 @@ $("closeSuccess").onclick = () => {
 function resetOrder() {
   cart = [];
   method = "cash";
-  category = "semua";
+  selSeller = "semua";
+  selCat = "semua";
   $("paid").value = "";
   $("search").value = "";
   document.querySelectorAll("#paySeg button").forEach((x) =>
     x.classList.toggle("active", x.dataset.method === "cash")
   );
-  document.querySelectorAll("#catChips .chip").forEach((c) =>
-    c.classList.toggle("active", c.dataset.cat === "semua")
-  );
+  renderSellers();
+  renderCats();
   renderGrid();
   renderCart();
 }
 
+renderSellers();
+renderCats();
 renderGrid();
 renderCart();

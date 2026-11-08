@@ -55,6 +55,8 @@ Sekarang login di aplikasi:
 - Admin → username `adminklz` + password pilihanmu
 - Kasir → username `kasirklz` + password `klzkasir`
 
+> **Penting:** di kolom Username cukup ketik `kasirklz`, **bukan** `kasirklz@klz.app`. Email hanya dipakai di Firebase Console. (Versi terbaru aplikasi sudah menerima keduanya, tapi tetap disarankan memakai username.)
+
 > Catatan: di Firebase, Email/Password memerlukan **minimal 6 karakter**. Password `klzkasir` sudah memenuhi syarat.
 
 ---
@@ -104,7 +106,7 @@ Tanpa langkah ini, login akan gagal di website (error `auth/unauthorized-domain`
 2. Klik **Add domain**, isi dengan domain Netlify kamu, misalnya `klz-kasir.netlify.app` (tanpa `https://`).
 3. Simpan.
 
-Jika nanti memakai domain sendiri (misal `kasir.klzcoffee.com`), tambahkan juga domain tersebut di sini.
+**Jika memakai domain sendiri** (misal `klz.editinbang.my.id`), domain itu WAJIB juga ditambahkan di Authorized domains. Tanpa ini, login gagal dengan pesan "Domain website ini belum diizinkan". Domain `localhost` biasanya sudah ada otomatis untuk tes di komputer sendiri.
 
 ---
 
@@ -146,7 +148,10 @@ Jika nanti memakai domain sendiri (misal `kasir.klzcoffee.com`), tambahkan juga 
 
 | Masalah | Solusi |
 |---|---|
-| Login gagal terus | Pastikan akun dibuat di Authentication dengan email `...@klz.app` dan Email/Password sudah diaktifkan. |
+| "Username tidak dikenal" | Username yang diketik salah. Gunakan `kasirklz` atau `adminklz`. |
+| "Password salah" | Password tidak cocok dengan yang di Firebase. Reset lewat Authentication → Users → ⋮ → Reset password. |
+| "Akun belum dibuat" | User belum ditambahkan di Authentication dengan email `kasirklz@klz.app`. |
+| Login gagal terus | Buka F12 → Console, lihat kode error (`auth/...`) yang muncul, lalu cocokkan dengan tabel ini. |
 | `auth/unauthorized-domain` | Tambahkan domain Netlify ke Authorized domains (Bagian 3). |
 | "Missing or insufficient permissions" | Rules Firestore belum dipublish, atau email di rules tidak cocok dengan akun. |
 | Produk tidak muncul di kasir | Tambahkan produk dulu lewat halaman admin. |
@@ -194,3 +199,28 @@ Jika nanti memakai domain sendiri (misal `kasir.klzcoffee.com`), tambahkan juga 
 
 ### Update rules
 Tidak ada perubahan pada `firestore.rules`. Rules sebelumnya sudah mengizinkan admin untuk mengubah dan menghapus pesanan. Namun, jika Anda sudah pernah memasang rules, pastikan rules tersebut sudah dipublish ulang agar nilai terbaru berlaku.
+
+---
+
+## Pembaruan: Seller, Kategori, dan Ralat Kasir
+
+### WAJIB: publish ulang Firestore Rules
+Aturan keamanan berubah (ada koleksi `sellers` dan `categories`, dan kasir boleh mengedit pesanan).
+Firebase Console → Firestore Database → **Rules** → hapus isi lama → paste isi `firestore.rules` → **Publish**.
+Kalau lupa langkah ini, daftar seller dan kategori tidak akan muncul di kasir.
+
+### Admin: tab "Seller & Kategori"
+- **Seller**: tambah nama seller di sini dulu. Seller yang masih dipakai produk tidak bisa dihapus.
+- **Kategori**: tambah atau hapus kategori. Kategori default: jajan, jajanan utama, minuman, nasi, lauk, lainnya.
+- Saat pertama kali admin dibuka, seller dan kategori dari produk lama otomatis dimasukkan ke daftar.
+
+### Admin: tambah produk
+- Seller dan kategori dipilih dari dropdown, tidak lagi diketik bebas.
+- Kalau daftar seller atau kategori masih kosong, aplikasi memberi peringatan.
+
+### Kasir
+- **Pilih seller** dengan menggeser deretan seller (drag dengan mouse atau swipe di layar sentuh).
+- Setelah seller dipilih, **kategori yang tampil hanya milik seller itu**. Produk juga ikut terfilter.
+- **Riwayat Transaksi** di halaman depan kasir menampilkan transaksi per tanggal. Pilih tanggal dengan kolom tanggal di atasnya.
+- Tombol **Edit** pada transaksi membuka popup untuk meralat item, jumlah, metode, dan nominal bayar.
+- Kasir **tidak bisa menghapus** transaksi. Hanya admin yang bisa menghapus.

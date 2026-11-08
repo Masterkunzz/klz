@@ -26,9 +26,17 @@
         <div class="home-hero">
           <button class="btn btn-new" id="newOrderBtn"><span>+</span> New Order</button>
         </div>
-        <div class="stats-grid">
-          <div class="stat"><span>Transaksi Hari Ini</span><strong id="todayCount">0</strong></div>
-          <div class="stat"><span>Omzet Hari Ini</span><strong id="todayTotal">Rp 0</strong></div>
+
+        <div class="card">
+          <div class="row-between">
+            <h2>Riwayat Transaksi</h2>
+            <input type="date" id="histDate" class="select-sm">
+          </div>
+          <div class="stats-grid small">
+            <div class="stat"><span>Transaksi</span><strong id="dayCount">0</strong></div>
+            <div class="stat"><span>Omzet</span><strong id="dayTotal">Rp 0</strong></div>
+          </div>
+          <ul id="histList" class="hist-list"></ul>
         </div>
       </section>
 
@@ -41,14 +49,11 @@
               <input id="search" type="search" placeholder="Cari nama produk..." autocomplete="off">
             </div>
 
-            <div class="chips" id="catChips">
-              <button type="button" class="chip active" data-cat="semua">Semua</button>
-              <button type="button" class="chip" data-cat="jajan">Jajan</button>
-              <button type="button" class="chip" data-cat="minuman">Minuman</button>
-              <button type="button" class="chip" data-cat="nasi">Nasi</button>
-              <button type="button" class="chip" data-cat="lauk">Lauk</button>
-              <button type="button" class="chip" data-cat="lainnya">Lainnya</button>
-            </div>
+            <p class="section-label">Pilih seller</p>
+            <div class="seller-strip" id="sellerStrip"></div>
+
+            <p class="section-label">Kategori</p>
+            <div class="chips" id="catChips"></div>
 
             <div id="productGrid" class="product-grid"></div>
           </div>
@@ -95,6 +100,32 @@
       <h2>Pesanan Berhasil!</h2>
       <p id="successInfo"></p>
       <button class="btn btn-primary btn-block btn-lg" id="closeSuccess">Tutup</button>
+    </div>
+  </div>
+
+  <!-- Popup edit transaksi -->
+  <div class="overlay" id="orderModal">
+    <div class="modal form">
+      <h2>Edit Transaksi</h2>
+      <p class="muted" id="oeNo"></p>
+      <ul id="oeItems" class="cart-list"></ul>
+
+      <div class="pay-seg" id="oeMethod">
+        <button type="button" data-m="cash">Cash</button>
+        <button type="button" data-m="qris">QRIS</button>
+      </div>
+
+      <label>Nominal Bayar
+        <input id="oePaid" type="number" inputmode="numeric" min="0">
+      </label>
+
+      <div class="total-row"><span>Total</span><strong id="oeTotal">Rp 0</strong></div>
+      <div class="change-row"><span>Kembalian</span><strong id="oeChange">Rp 0</strong></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="orderModal">Batal</button>
+        <button type="button" class="btn btn-primary" id="oeSave">Simpan Perubahan</button>
+      </div>
     </div>
   </div>
 

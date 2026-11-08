@@ -1,11 +1,15 @@
-import { db, rupiah, toast, esc, requireRole, logout, CATEGORIES, catLabel } from "./common.js";
+import { db, rupiah, toast, esc, requireRole, logout, catLabel } from "./common.js";
+import { openOrderEditor, initOrderEditor } from "./order-editor.js";
 import {
-  collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot, serverTimestamp
+  collection, addDoc, deleteDoc, doc, query, where, orderBy, onSnapshot, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 await requireRole("admin");
 const $ = (id) => document.getElementById(id);
 $("logoutBtn").onclick = logout;
+initOrderEditor();
+
+const DEFAULT_CATEGORIES = ["jajan", "jajanan utama", "minuman", "nasi", "lauk", "lainnya"];
 
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -32,24 +36,187 @@ const openModal = (id) => $(id).classList.add("show");
 const closeModal = (id) => $(id).classList.remove("show");
 document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => closeModal(b.dataset.close)));
 
-// Isi pilihan kategori
-$("categorySelect").innerHTML = CATEGORIES.map((c) => `<option value="${c}">${catLabel(c)}</option>`).join("");
-$("productCatFilter").insertAdjacentHTML(
-  "beforeend",
-  CATEGORIES.map((c) => `<option value="${c}">${catLabel(c)}</option>`).join("")
-);
-
-// ================= PRODUK =================
+// ================= DATA MASTER & PRODUK (realtime) =================
 let products = [];
-let editingId = null;
+let sellers = [];
+let categories = [];
+let orders = [];
+const ready = { products: false, sellers: false, categories: false };
+let synced = false;
 
 onSnapshot(query(collection(db, "products"), orderBy("name")), (snap) => {
   products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const sellers = [...new Set(products.map((p) => p.seller).filter(Boolean))].sort();
-  $("sellerList").innerHTML = sellers.map((s) => `<option value="${esc(s)}">`).join("");
-  renderProducts();
+  ready.products = true;
+  maybeSync();
+  refreshAll();
 });
 
+onSnapshot(query(collection(db, "sellers"), orderBy("name")), (snap) => {
+  sellers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  ready.sellers = true;
+  maybeSync();
+  refreshAll();
+});
+
+onSnapshot(query(collection(db, "categories"), orderBy("name")), (snap) => {
+  categories = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  ready.categories = true;
+  maybeSync();
+  refreshAll();
+});
+
+function refreshAll() {
+  fillSelects();
+  renderMaster();
+  renderProducts();
+  fillFilterCats();
+}
+
+/**
+ * Sekali saja saat pertama kali dibuka:
+ * - isi kategori default jika masih kosong
+ * - buat seller & kategori otomatis dari produk lama yang belum terdaftar
+ */
+async function maybeSync() {
+  if (synced || !(ready.products && ready.sellers && ready.categories)) return;
+  synced = true;
+  try {
+    const catNames = new Set(categories.map((c) => c.name));
+    if (!categories.length) {
+      for (const c of DEFAULT_CATEGORIES) {
+        await addDoc(collection(db, "categories"), { name: c, createdAt: serverTimestamp() });
+        catNames.add(c);
+      }
+    }
+
+    const sellerNames = new Set(sellers.map((s) => s.name.toLowerCase()));
+    const missingSellers = [...new Set(products.map((p) => (p.seller || "").trim()).filter(Boolean))].filter(
+      (n) => !sellerNames.has(n.toLowerCase())
+    );
+    for (const n of missingSellers) {
+      await addDoc(collection(db, "sellers"), { name: n, createdAt: serverTimestamp() });
+    }
+
+    const missingCats = [...new Set(products.map((p) => p.category).filter(Boolean))].filter(
+      (c) => !catNames.has(c)
+    );
+    for (const c of missingCats) {
+      await addDoc(collection(db, "categories"), { name: c, createdAt: serverTimestamp() });
+    }
+  } catch (err) {
+    console.error("Sinkronisasi master gagal:", err);
+    synced = false;
+  }
+}
+
+function fillSelects() {
+  const sellerSel = $("sellerSelect");
+  const catSel = $("categorySelect");
+  const prevSeller = sellerSel.value;
+  const prevCat = catSel.value;
+
+  sellerSel.innerHTML = sellers.length
+    ? sellers.map((s) => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join("")
+    : `<option value="">— belum ada seller —</option>`;
+  catSel.innerHTML = categories.length
+    ? categories.map((c) => `<option value="${esc(c.name)}">${catLabel(c.name)}</option>`).join("")
+    : `<option value="">— belum ada kategori —</option>`;
+
+  if (prevSeller) sellerSel.value = prevSeller;
+  if (prevCat) catSel.value = prevCat;
+}
+
+function fillFilterCats() {
+  const sel = $("productCatFilter");
+  const cur = sel.value;
+  sel.innerHTML =
+    `<option value="">Semua kategori</option>` +
+    categories.map((c) => `<option value="${esc(c.name)}">${catLabel(c.name)}</option>`).join("");
+  sel.value = cur;
+}
+
+// ---------- Master: seller & kategori ----------
+function renderMaster() {
+  $("sellerChips").innerHTML = sellers.length
+    ? sellers
+        .map((s) => {
+          const n = products.filter((p) => p.seller === s.name).length;
+          return `<span class="chip static">${esc(s.name)} <small>(${n})</small>
+            <button class="chip-x" data-dseller="${s.id}" aria-label="Hapus">×</button></span>`;
+        })
+        .join("")
+    : `<p class="empty">Belum ada seller</p>`;
+
+  $("catChips").innerHTML = categories.length
+    ? categories
+        .map((c) => {
+          const n = products.filter((p) => p.category === c.name).length;
+          return `<span class="chip static">${catLabel(c.name)} <small>(${n})</small>
+            <button class="chip-x" data-dcat="${c.id}" aria-label="Hapus">×</button></span>`;
+        })
+        .join("")
+    : `<p class="empty">Belum ada kategori</p>`;
+}
+
+$("sellerForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const name = e.target.name.value.trim();
+  if (!name) return;
+  if (sellers.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+    toast("Seller itu sudah ada.", "error");
+    return;
+  }
+  try {
+    await addDoc(collection(db, "sellers"), { name, createdAt: serverTimestamp() });
+    e.target.reset();
+    toast("Seller ditambahkan");
+  } catch (err) {
+    toast("Gagal: " + err.message, "error");
+  }
+};
+
+$("catForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const name = e.target.name.value.trim().toLowerCase();
+  if (!name) return;
+  if (categories.some((c) => c.name === name)) {
+    toast("Kategori itu sudah ada.", "error");
+    return;
+  }
+  try {
+    await addDoc(collection(db, "categories"), { name, createdAt: serverTimestamp() });
+    e.target.reset();
+    toast("Kategori ditambahkan");
+  } catch (err) {
+    toast("Gagal: " + err.message, "error");
+  }
+};
+
+$("sellerChips").onclick = async (e) => {
+  const b = e.target.closest("[data-dseller]");
+  if (!b) return;
+  const s = sellers.find((x) => x.id === b.dataset.dseller);
+  if (!s) return;
+  const used = products.filter((p) => p.seller === s.name).length;
+  if (used) return toast(`Seller "${s.name}" masih dipakai ${used} produk.`, "error");
+  if (!confirm(`Hapus seller "${s.name}"?`)) return;
+  await deleteDoc(doc(db, "sellers", s.id));
+  toast("Seller dihapus");
+};
+
+$("catChips").onclick = async (e) => {
+  const b = e.target.closest("[data-dcat]");
+  if (!b) return;
+  const c = categories.find((x) => x.id === b.dataset.dcat);
+  if (!c) return;
+  const used = products.filter((p) => p.category === c.name).length;
+  if (used) return toast(`Kategori "${c.name}" masih dipakai ${used} produk.`, "error");
+  if (!confirm(`Hapus kategori "${c.name}"?`)) return;
+  await deleteDoc(doc(db, "categories", c.id));
+  toast("Kategori dihapus");
+};
+
+// ---------- Produk ----------
 $("productSearch").oninput = renderProducts;
 $("productCatFilter").onchange = renderProducts;
 
@@ -60,10 +227,9 @@ function renderProducts() {
   const list = products.filter(
     (p) =>
       (!q || (p.name || "").toLowerCase().includes(q) || (p.seller || "").toLowerCase().includes(q)) &&
-      (!cf || (p.category || "lainnya") === cf)
+      (!cf || p.category === cf)
   );
 
-  // Kelompokkan per seller
   const groups = {};
   list.forEach((p) => {
     const s = p.seller || "Tanpa seller";
@@ -104,19 +270,23 @@ function renderProducts() {
       </div>`
         )
         .join("")
-    : `<div class="card empty">Belum ada produk. Tekan "+ Tambah Produk".</div>`;
+    : `<div class="card empty">Belum ada produk. Tambahkan seller dan kategori dulu di tab "Seller & Kategori".</div>`;
 }
 
 function openProductModal(p = null) {
-  editingId = p ? p.id : null;
+  if (!sellers.length) return toast("Tambahkan seller dulu di tab Seller & Kategori.", "error");
+  if (!categories.length) return toast("Tambahkan kategori dulu.", "error");
+
   const f = $("productForm");
   f.reset();
+  f.dataset.id = p ? p.id : "";
   $("productModalTitle").textContent = p ? "Edit Produk" : "Tambah Produk";
+  fillSelects();
   if (p) {
     f.name.value = p.name || "";
     f.seller.value = p.seller || "";
+    f.category.value = p.category || "";
     f.price.value = p.price ?? "";
-    f.category.value = p.category || "lainnya";
   }
   openModal("productModal");
   setTimeout(() => f.name.focus(), 50);
@@ -129,21 +299,22 @@ $("productForm").onsubmit = async (e) => {
   const f = e.target;
   const data = {
     name: f.name.value.trim(),
-    seller: f.seller.value.trim(),
-    price: Math.round(Number(f.price.value)),
+    seller: f.seller.value,
     category: f.category.value,
+    price: Math.round(Number(f.price.value)),
   };
 
-  if (!data.name || !data.seller || !(data.price >= 0) || !CATEGORIES.includes(data.category)) {
-    toast("Lengkapi nama, seller, harga, dan kategori.", "error");
+  if (!data.name || !data.seller || !data.category || !(data.price >= 0)) {
+    toast("Lengkapi semua field.", "error");
     return;
   }
 
+  const id = f.dataset.id;
   const btn = $("saveProductBtn");
   btn.disabled = true;
   try {
-    if (editingId) {
-      await updateDoc(doc(db, "products", editingId), data);
+    if (id) {
+      await updateDoc(doc(db, "products", id), data);
       toast("Produk diperbarui");
     } else {
       await addDoc(collection(db, "products"), { ...data, createdAt: serverTimestamp() });
@@ -178,8 +349,6 @@ $("sellerGroups").onclick = async (e) => {
 };
 
 // ================= DATA PESANAN (realtime) =================
-let orders = [];
-
 onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snap) => {
   orders = snap.docs.map((d) => {
     const x = d.data();
@@ -199,9 +368,7 @@ function renderHistory() {
   const to = new Date($("hTo").value + "T23:59:59.999");
   const method = $("hMethod").value;
 
-  const list = orders.filter(
-    (o) => o.date >= from && o.date <= to && (!method || o.method === method)
-  );
+  const list = orders.filter((o) => o.date >= from && o.date <= to && (!method || o.method === method));
   const sum = list.reduce((s, o) => s + (o.total || 0), 0);
   $("historyCount").textContent = `${list.length} transaksi · total ${rupiah(sum)}`;
 
@@ -228,124 +395,13 @@ function renderHistory() {
     : `<tr><td colspan="9" class="empty">Tidak ada transaksi di rentang ini</td></tr>`;
 }
 
-// ---- Edit pesanan (ralat) ----
-let editOrder = null;
-
-function openOrderEdit(o) {
-  editOrder = {
-    id: o.id,
-    no: o.no,
-    items: (o.items || []).map((i) => ({ ...i })),
-    method: o.method || "cash",
-    paid: o.paid || 0,
-  };
-  renderOrderEdit();
-  openModal("orderModal");
-}
-
-const orderTotal = () => editOrder.items.reduce((s, i) => s + i.price * i.qty, 0);
-
-function renderOrderEdit() {
-  $("oeNo").textContent = "No. " + (editOrder.no || "-");
-  $("oeItems").innerHTML = editOrder.items.length
-    ? editOrder.items
-        .map(
-          (i, idx) => `
-      <li>
-        <div class="ci-info"><strong>${esc(i.name)}</strong><small>${rupiah(i.price)} / pcs</small></div>
-        <div class="qty">
-          <button type="button" data-oact="dec" data-idx="${idx}">−</button>
-          <span>${i.qty}</span>
-          <button type="button" data-oact="inc" data-idx="${idx}">+</button>
-        </div>
-        <button type="button" class="icon-del" data-oact="del" data-idx="${idx}">✕</button>
-      </li>`
-        )
-        .join("")
-    : `<li class="empty">Semua item dihapus</li>`;
-
-  document.querySelectorAll("#oeMethod button").forEach((b) =>
-    b.classList.toggle("active", b.dataset.m === editOrder.method)
-  );
-  $("oePaid").value = editOrder.paid;
-  updateOrderEditTotals();
-}
-
-function updateOrderEditTotals() {
-  const t = orderTotal();
-  if (editOrder.method === "qris") {
-    editOrder.paid = t;
-    $("oePaid").value = t;
-  }
-  const change = editOrder.paid - t;
-  $("oeTotal").textContent = rupiah(t);
-  $("oeChange").textContent = change < 0 ? "Kurang " + rupiah(-change) : rupiah(change);
-  $("oeChange").classList.toggle("bad", change < 0);
-  $("oeSave").disabled = !editOrder.items.length || change < 0;
-}
-
-$("oeItems").onclick = (e) => {
-  const b = e.target.closest("[data-oact]");
-  if (!b) return;
-  const idx = Number(b.dataset.idx);
-  const it = editOrder.items[idx];
-  if (b.dataset.oact === "del") {
-    editOrder.items.splice(idx, 1);
-  } else if (it) {
-    it.qty += b.dataset.oact === "inc" ? 1 : -1;
-    if (it.qty <= 0) editOrder.items.splice(idx, 1);
-  }
-  renderOrderEdit();
-};
-
-$("oeMethod").onclick = (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  editOrder.method = b.dataset.m;
-  renderOrderEdit();
-};
-
-$("oePaid").oninput = (e) => {
-  editOrder.paid = Number(e.target.value || 0);
-  updateOrderEditTotals();
-};
-
-$("oeSave").onclick = async () => {
-  const t = orderTotal();
-  if (!editOrder.items.length || editOrder.paid < t) return;
-
-  const items = editOrder.items.map((i) => ({
-    id: i.id,
-    name: i.name,
-    seller: i.seller || "",
-    price: i.price,
-    qty: i.qty,
-    subtotal: i.price * i.qty,
-  }));
-
-  try {
-    await updateDoc(doc(db, "orders", editOrder.id), {
-      items,
-      total: t,
-      paid: editOrder.paid,
-      change: editOrder.paid - t,
-      method: editOrder.method,
-      editedAt: serverTimestamp(),
-    });
-    toast("Pesanan diperbarui");
-    closeModal("orderModal");
-  } catch (err) {
-    toast("Gagal menyimpan: " + err.message, "error");
-  }
-};
-
 $("historyRows").onclick = async (e) => {
   const editBtn = e.target.closest("[data-oedit]");
   const delBtn = e.target.closest("[data-odel]");
 
   if (editBtn) {
     const o = orders.find((x) => x.id === editBtn.dataset.oedit);
-    if (o) openOrderEdit(o);
+    if (o) openOrderEditor(o);
   }
   if (delBtn) {
     const o = orders.find((x) => x.id === delBtn.dataset.odel);

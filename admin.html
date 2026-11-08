@@ -22,6 +22,7 @@
 
     <nav class="tabs">
       <button class="tab active" data-tab="produk">Produk</button>
+      <button class="tab" data-tab="master">Seller & Kategori</button>
       <button class="tab" data-tab="riwayat">Riwayat Penjualan</button>
       <button class="tab" data-tab="analitik">Analitik</button>
     </nav>
@@ -39,6 +40,30 @@
           </div>
         </div>
         <div id="sellerGroups" class="seller-groups"></div>
+      </section>
+
+      <!-- ============ MASTER: SELLER & KATEGORI ============ -->
+      <section id="tab-master" class="tab-panel hidden">
+        <div class="two-col">
+          <div class="card">
+            <h2>Daftar Seller</h2>
+            <form id="sellerForm" class="inline-form">
+              <input name="name" placeholder="Nama seller baru" required maxlength="60" autocomplete="off">
+              <button class="btn btn-primary" type="submit">Tambah</button>
+            </form>
+            <div id="sellerChips" class="chip-list"></div>
+          </div>
+
+          <div class="card">
+            <h2>Daftar Kategori</h2>
+            <form id="catForm" class="inline-form">
+              <input name="name" placeholder="Nama kategori baru" required maxlength="40" autocomplete="off">
+              <button class="btn btn-primary" type="submit">Tambah</button>
+            </form>
+            <div id="catChips" class="chip-list"></div>
+          </div>
+        </div>
+        <p class="muted">Seller dan kategori yang masih dipakai produk tidak bisa dihapus.</p>
       </section>
 
       <!-- ============ RIWAYAT ============ -->
@@ -121,14 +146,13 @@
           <input name="name" required maxlength="80" autocomplete="off">
         </label>
         <label>Seller
-          <input name="seller" required maxlength="80" list="sellerList" autocomplete="off" placeholder="Nama seller">
-          <datalist id="sellerList"></datalist>
-        </label>
-        <label>Harga (Rp)
-          <input name="price" type="number" min="0" step="1" required inputmode="numeric">
+          <select name="seller" id="sellerSelect" required></select>
         </label>
         <label>Kategori
           <select name="category" id="categorySelect" required></select>
+        </label>
+        <label>Harga (Rp)
+          <input name="price" type="number" min="0" step="1" required inputmode="numeric">
         </label>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close="productModal">Batal</button>
@@ -138,10 +162,10 @@
     </div>
   </div>
 
-  <!-- ============ POPUP EDIT PESANAN (RALAT) ============ -->
+  <!-- ============ POPUP EDIT TRANSAKSI ============ -->
   <div class="overlay" id="orderModal">
     <div class="modal form">
-      <h2>Edit Pesanan</h2>
+      <h2>Edit Transaksi</h2>
       <p class="muted" id="oeNo"></p>
       <ul id="oeItems" class="cart-list"></ul>
 
